@@ -1,0 +1,67 @@
+name: my-app
+namespace: default
+
+container:
+  name: my-app
+  image: my-app:latest
+  ports:
+    - containerPort: 80
+  env:
+    - name: ENV_VAR
+      value: "value"
+  volumeMounts:
+    - name: config-volume
+      mountPath: /app/config
+  resources:
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+    requests:
+      cpu: "250m"
+      memory: "128Mi"
+
+replicas: 2
+
+volumes:
+  - name: config-volume
+    configMap:
+      name: my-app-config
+
+service:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+  selector:
+    app: my-app
+
+configmap:
+  data:
+    CONFIG_KEY: config_value
+
+secret:
+  type: Opaque
+  data:
+    SECRET_KEY: secret_value
+
+pvc:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+
+ingress:
+  host: my-app.local
+  paths:
+    - path: /
+      pathType: Prefix
+      backend:
+        service:
+          name: my-app
+          port:
+            number: 80
+
+hpa:
+  minReplicas: 1
+  maxReplicas: 5
+  cpuUtilization: 60
