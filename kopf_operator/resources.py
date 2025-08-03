@@ -13,6 +13,7 @@ class ResourceFactory:
     def deployment(name: str, ns: str, spec: Dict[str, Any]) -> V1Deployment:
         container_spec = spec.get("container", {})
         volumes = spec.get("volumes", [])
+
         return V1Deployment(
             metadata=meta(name, ns, ResourceFactory.labels(name)),
             spec=V1DeploymentSpec(
@@ -27,7 +28,11 @@ class ResourceFactory:
                             ports=container_spec.get("ports", []),
                             env=container_spec.get("env", []),
                             volume_mounts=container_spec.get("volumeMounts", []),
-                            resources=V1ResourceRequirements(**container_spec.get("resources", {}))
+                            resources=V1ResourceRequirements(
+                                **container_spec.get("resources", {})
+                            ),
+                            liveness_probe=V1Probe(**container_spec.get("livenessProbe", {})) if container_spec.get("livenessProbe") else None,
+                            readiness_probe=V1Probe(**container_spec.get("readinessProbe", {})) if container_spec.get("readinessProbe") else None
                         )],
                         volumes=[V1Volume(**v) for v in volumes]
                     )

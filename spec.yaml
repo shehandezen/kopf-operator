@@ -1,17 +1,19 @@
 name: my-app
 namespace: default
 
+replicas: 2
+
 container:
   name: my-app
   image: my-app:latest
   ports:
-    - containerPort: 80
+    - containerPort: 8080
   env:
-    - name: ENV_VAR
-      value: "value"
+    - name: ENVIRONMENT
+      value: production
   volumeMounts:
-    - name: config-volume
-      mountPath: /app/config
+    - name: app-data
+      mountPath: /data
   resources:
     limits:
       cpu: "500m"
@@ -19,30 +21,40 @@ container:
     requests:
       cpu: "250m"
       memory: "128Mi"
-
-replicas: 2
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: 8080
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8080
+    initialDelaySeconds: 5
+    periodSeconds: 10
 
 volumes:
-  - name: config-volume
-    configMap:
-      name: my-app-config
+  - name: app-data
+    emptyDir: {}
 
 service:
-  type: ClusterIP
-  ports:
-    - port: 80
-      targetPort: 80
   selector:
     app: my-app
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP
 
 configmap:
   data:
-    CONFIG_KEY: config_value
+    APP_ENV: production
+    LOG_LEVEL: info
 
 secret:
-  type: Opaque
   data:
-    SECRET_KEY: secret_value
+    DB_PASSWORD: my-secret-password
+  type: Opaque
 
 pvc:
   accessModes: ["ReadWriteOnce"]
@@ -62,6 +74,6 @@ ingress:
             number: 80
 
 hpa:
-  minReplicas: 1
+  minReplicas: 2
   maxReplicas: 5
   cpuUtilization: 60
