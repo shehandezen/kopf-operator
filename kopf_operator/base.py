@@ -3,8 +3,9 @@ import kubernetes.client as k8s
 from kubernetes.client.rest import ApiException
 from typing import Any, Dict
 from kopf import HandlerRegistry
-from .resources import ResourceFactory
-from .utils import deep_merge
+from kopf_operator.resources import ResourceFactory
+from kopf_operator.utils import load_defaults, deep_merge, render_templates
+
 
 class BaseKopfOperator:
     def __init__(self, kind: str, plural: str, group: str = "cneura.ai", version: str = "v1"):
@@ -42,8 +43,14 @@ class BaseKopfOperator:
             self.log(f"[RECONCILE] {name} in {namespace}")
             self.reconcile(name, namespace, spec)
 
+    def apply_runtime_defaults(self, kind: str, name: str, spec: Dict[str, Any]) -> Dict[str, Any]:
+        defaults = load_defaults(kind)
+        rendered = render_templates(defaults, {"name": name})
+        return deep_merge(spec, rendered)
+
     def create_all_resources(self, name: str, ns: str, spec: Dict[str, Any]):
         # Create resources if specified in spec
+        spec = self.apply_runtime_defaults(kind=self.kind, spec=spec)
         self.apply_resource(self.apps_v1.create_namespaced_deployment, ns, ResourceFactory.deployment(name, ns, spec))
         self.apply_resource(self.core_v1.create_namespaced_service, ns, ResourceFactory.service(name, ns, spec))
 
@@ -64,6 +71,7 @@ class BaseKopfOperator:
 
     def update_all_resources(self, name: str, ns: str, spec: Dict[str, Any]):
         # Patch existing resources to desired state
+        spec = self.apply_runtime_defaults(kind=self.kind, spec=spec)
         self.apply_resource(self.apps_v1.patch_namespaced_deployment, ns, ResourceFactory.deployment(name, ns, spec), name)
         self.apply_resource(self.core_v1.patch_namespaced_service, ns, ResourceFactory.service(name, ns, spec), name)
 
@@ -104,6 +112,7 @@ class BaseKopfOperator:
 
     def reconcile(self, name: str, ns: str, spec: Dict[str, Any]):
         # Reconcile each resource: recreate if missing or patch if drifted
+        spec = self.apply_runtime_defaults(kind=self.kind, spec=spec)
         self._reconcile_resource(
             resource_name=name,
             namespace=ns,

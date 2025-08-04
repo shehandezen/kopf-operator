@@ -1,11 +1,39 @@
-from typing import Dict, Any
+import os
+import yaml
 import copy
+from typing import Dict, Any
+from jinja2 import Template
 
-def deep_merge(original: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
-    result = copy.deepcopy(original)
-    for k, v in new.items():
-        if isinstance(v, dict) and k in result:
-            result[k] = deep_merge(result[k], v)
-        else:
-            result[k] = v
-    return result
+DEFAULTS_DIR = os.getenv("DEFAULTS_DIR", os.path.join(os.path.dirname(__file__), "../defaults"))
+
+def load_defaults(kind: str) -> Dict[str, Any]:
+    """
+    Load default spec for a given kind from YAML file located in DEFAULTS_DIR.
+    """
+    path = os.path.join(DEFAULTS_DIR, f"{kind.lower()}.yaml")
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Default spec file not found: {path}")
+    
+    with open(path, "r") as f:
+        return yaml.safe_load(f)
+    
+def deep_merge(user: Dict[str, Any], default: Dict[str, Any]) -> Dict[str, Any]:
+    for key, value in default.items():
+        if key not in user:
+            user[key] = value
+        elif isinstance(value, dict) and isinstance(user.get(key), dict):
+            user[key] = deep_merge(user[key], value)
+    return user
+
+
+
+def render_templates(obj: Any, context: dict) -> Any:
+    if isinstance(obj, dict):
+        return {k: render_templates(v, context) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [render_templates(item, context) for item in obj]
+    elif isinstance(obj, str):
+        return Template(obj).render(**context)
+    else:
+        return obj
+
