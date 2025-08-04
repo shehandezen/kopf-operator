@@ -12,7 +12,8 @@ class ResourceFactory:
     @staticmethod
     def deployment(name: str, ns: str, spec: Dict[str, Any]) -> V1Deployment:
         container_spec = spec.get("container", {})
-        volumes = spec.get("volumes", [])
+        volumes = container_spec.get("volumes", [])
+        affinity = spec.get("affinity")
 
         return V1Deployment(
             metadata=meta(name, ns, ResourceFactory.labels(name)),
@@ -26,15 +27,16 @@ class ResourceFactory:
                             name=container_spec.get("name", name),
                             image=container_spec.get("image", "nginx"),
                             ports=container_spec.get("ports", []),
-                            env=container_spec.get("env", []),
-                            volume_mounts=container_spec.get("volumeMounts", []),
+                            env=[V1EnvVar(**e) for e in container_spec.get("env", [])],
+                            volume_mounts=[V1VolumeMount(**vm) for vm in container_spec.get("volumeMounts", [])],
                             resources=V1ResourceRequirements(
                                 **container_spec.get("resources", {})
                             ),
                             liveness_probe=V1Probe(**container_spec.get("livenessProbe", {})) if container_spec.get("livenessProbe") else None,
                             readiness_probe=V1Probe(**container_spec.get("readinessProbe", {})) if container_spec.get("readinessProbe") else None
                         )],
-                        volumes=[V1Volume(**v) for v in volumes]
+                        volumes=[V1Volume(**v) for v in volumes],
+                        affinity=V1Affinity(**affinity) if affinity else None
                     )
                 )
             )
@@ -44,7 +46,7 @@ class ResourceFactory:
     def service(name: str, ns: str, spec: Dict[str, Any]) -> V1Service:
         svc_spec = spec.get("service", {})
         return V1Service(
-            metadata=meta(name, ns, ResourceFactory.labels(name)),
+            metadata=meta(f"{name}-svc", ns, ResourceFactory.labels(name)),
             spec=V1ServiceSpec(
                 selector=svc_spec.get("selector", ResourceFactory.labels(name)),
                 ports=[V1ServicePort(**p) for p in svc_spec.get("ports", [{"port": 80, "targetPort": 80}])],
@@ -55,14 +57,14 @@ class ResourceFactory:
     @staticmethod
     def configmap(name: str, ns: str, spec: Dict[str, Any]) -> V1ConfigMap:
         return V1ConfigMap(
-            metadata=meta(name, ns, ResourceFactory.labels(name)),
+            metadata=meta(f"{name}-config", ns, ResourceFactory.labels(name)),
             data=spec.get("data", {})
         )
 
     @staticmethod
     def secret(name: str, ns: str, spec: Dict[str, Any]) -> V1Secret:
         return V1Secret(
-            metadata=meta(name, ns, ResourceFactory.labels(name)),
+            metadata=meta(f"{name}-secret", ns, ResourceFactory.labels(name)),
             string_data=spec.get("data", {}),
             type=spec.get("type", "Opaque")
         )
@@ -70,7 +72,7 @@ class ResourceFactory:
     @staticmethod
     def pvc(name: str, ns: str, spec: Dict[str, Any]) -> V1PersistentVolumeClaim:
         return V1PersistentVolumeClaim(
-            metadata=meta(name, ns, ResourceFactory.labels(name)),
+            metadata=meta(f"{name}-pvc", ns, ResourceFactory.labels(name)),
             spec=V1PersistentVolumeClaimSpec(**spec)
         )
 
@@ -87,7 +89,7 @@ class ResourceFactory:
             }
         }])
         return V1Ingress(
-            metadata=meta(name, ns, ResourceFactory.labels(name)),
+            metadata=meta(f"{name}-ingress", ns, ResourceFactory.labels(name)),
             spec=V1IngressSpec(
                 rules=[V1IngressRule(
                     host=spec.get("host", f"{name}.local"),
@@ -100,17 +102,16 @@ class ResourceFactory:
 
     @staticmethod
     def hpa(name: str, ns: str, spec: Dict[str, Any]) -> V1HorizontalPodAutoscaler:
-        hpa_spec = spec.get("hpa", {})
         return V1HorizontalPodAutoscaler(
-            metadata=meta(name, ns, ResourceFactory.labels(name)),
+            metadata=meta(f"{name}-hpa", ns, ResourceFactory.labels(name)),
             spec=V1HorizontalPodAutoscalerSpec(
                 scale_target_ref=V1TypedLocalObjectReference(
                     api_version="apps/v1",
                     kind="Deployment",
                     name=name
                 ),
-                min_replicas=hpa_spec.get("minReplicas", 1),
-                max_replicas=hpa_spec.get("maxReplicas", 5),
-                target_cpu_utilization_percentage=hpa_spec.get("cpuUtilization", 50)
+                min_replicas=spec.get("minReplicas", 1),
+                max_replicas=spec.get("maxReplicas", 5),
+                target_cpu_utilization_percentage=spec.get("cpuUtilization", 50)
             )
         )

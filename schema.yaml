@@ -1,0 +1,329 @@
+spec:
+  type: object
+  properties:
+    replicas:
+      type: integer
+      minimum: 1
+      default: 1
+      description: Number of pod replicas
+    container:
+      type: object
+      required:
+        - name
+        - image
+      properties:
+        name:
+          type: string
+          description: Container name
+        image:
+          type: string
+          description: Container image
+        ports:
+          type: array
+          items:
+            type: object
+            properties:
+              containerPort:
+                type: integer
+                minimum: 1
+                maximum: 65535
+            required:
+              - containerPort
+          description: List of container ports
+        env:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              value:
+                type: string
+              valueFrom:
+                type: object
+                properties:
+                  secretKeyRef:
+                    type: object
+                    required:
+                      - name
+                      - key
+                    properties:
+                      name:
+                        type: string
+                      key:
+                        type: string
+                  configMapKeyRef:
+                    type: object
+                    required:
+                      - name
+                      - key
+                    properties:
+                      name:
+                        type: string
+                      key:
+                        type: string
+            oneOf:
+              - required: ["value"]
+              - required: ["valueFrom"]
+            additionalProperties: false
+          description: Environment variables
+        volumeMounts:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              mountPath:
+                type: string
+            required:
+              - name
+              - mountPath
+          description: Volume mounts inside the container
+        resources:
+          type: object
+          properties:
+            limits:
+              type: object
+              properties:
+                cpu:
+                  type: string
+                memory:
+                  type: string
+            requests:
+              type: object
+              properties:
+                cpu:
+                  type: string
+                memory:
+                  type: string
+          description: CPU/memory resource requests and limits
+        livenessProbe:
+          type: object
+          properties:
+            exec:
+              type: object
+              properties:
+                command:
+                  type: array
+                  items:
+                    type: string
+              required:
+                - command
+            initialDelaySeconds:
+              type: integer
+            periodSeconds:
+              type: integer
+          description: Liveness probe config
+        readinessProbe:
+          type: object
+          properties:
+            exec:
+              type: object
+              properties:
+                command:
+                  type: array
+                  items:
+                    type: string
+              required:
+                - command
+            initialDelaySeconds:
+              type: integer
+            periodSeconds:
+              type: integer
+          description: Readiness probe config
+        volumes:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              emptyDir:
+                type: object
+                description: EmptyDir volume configuration
+              persistentVolumeClaim:
+                type: object
+                properties:
+                  claimName:
+                    type: string
+                required:
+                  - claimName
+            required:
+              - name
+          description: Volumes attached to the pod
+    affinity:
+      type: object
+      description: Pod affinity/anti-affinity rules
+      x-kubernetes-preserve-unknown-fields: true
+
+    service:
+      type: object
+      properties:
+        selector:
+          type: object
+          additionalProperties:
+            type: string
+          description: Selector labels to match pods for the service
+        ports:
+          type: array
+          items:
+            type: object
+            required:
+              - port
+            properties:
+              port:
+                type: integer
+                minimum: 1
+                maximum: 65535
+                description: The port that will be exposed by this service
+              targetPort:
+                oneOf:
+                  - type: integer
+                    minimum: 1
+                    maximum: 65535
+                  - type: string
+                description: The port on the pod that the service should forward to
+              protocol:
+                type: string
+                default: TCP
+                enum: [TCP, UDP, SCTP]
+                description: Protocol for the port
+              name:
+                type: string
+                description: Optional port name
+        type:
+          type: string
+          enum:
+            - ClusterIP
+            - NodePort
+            - LoadBalancer
+            - ExternalName
+          default: ClusterIP
+          description: Type of Kubernetes service
+      additionalProperties: false
+
+    configmap:
+      type: object
+      properties:
+        data:
+          type: object
+          description: Key-value pairs to store in the ConfigMap
+          additionalProperties:
+            type: string
+      additionalProperties: false
+
+    pvc:
+      type: object
+      properties:
+        accessModes:
+          type: array
+          items:
+            type: string
+            enum:
+              - ReadWriteOnce
+              - ReadOnlyMany
+              - ReadWriteMany
+          description: Access modes for the PVC
+        resources:
+          type: object
+          properties:
+            requests:
+              type: object
+              properties:
+                storage:
+                  type: string
+                  pattern: '^[0-9]+(Gi|Mi|Ti|Pi|Ei)$'  
+              required:
+                - storage
+          required:
+            - requests
+          description: Resource requests for PVC
+        storageClassName:
+          type: string
+          description: StorageClass to use for the PVC
+      required:
+        - accessModes
+        - resources
+      additionalProperties: false
+
+    ingress:
+      type: object
+      properties:
+        host:
+          type: string
+          description: Hostname for the ingress rule
+          default: example.local
+        paths:
+          type: array
+          items:
+            type: object
+            required:
+              - path
+              - pathType
+              - backend
+            properties:
+              path:
+                type: string
+                description: URL path to match
+              pathType:
+                type: string
+                enum:
+                  - Exact
+                  - Prefix
+                  - ImplementationSpecific
+                description: Type of path matching
+              backend:
+                type: object
+                required:
+                  - service
+                properties:
+                  service:
+                    type: object
+                    required:
+                      - name
+                      - port
+                    properties:
+                      name:
+                        type: string
+                        description: Name of the service to forward traffic to
+                      port:
+                        type: object
+                        required:
+                          - number
+                        properties:
+                          number:
+                            type: integer
+                            minimum: 1
+                            maximum: 65535
+                        description: Port number of the service
+      additionalProperties: false
+
+    hpa:
+      type: object
+      properties:
+        minReplicas:
+          type: integer
+          minimum: 1
+          default: 1
+          description: Minimum number of replicas for autoscaling
+        maxReplicas:
+          type: integer
+          minimum: 1
+          default: 5
+          description: Maximum number of replicas for autoscaling
+        cpuUtilization:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+          description: Target CPU utilization percentage for autoscaling
+      required:
+        - minReplicas
+        - maxReplicas
+        - cpuUtilization
+      additionalProperties: false
+
+
+
+

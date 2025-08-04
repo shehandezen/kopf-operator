@@ -7,11 +7,6 @@ from .resources import ResourceFactory
 from .utils import deep_merge
 
 class BaseKopfOperator:
-    group: str = "cneura.ai"
-    version: str = "v1alpha1"
-    plural: str = "cneurapps"
-    kind: str = "CneurApp"
-
     def __init__(self, kind: str, plural: str, group: str = "cneura.ai", version: str = "v1"):
         self.kind = kind
         self.plural = plural

@@ -34,9 +34,9 @@ container:
     initialDelaySeconds: 5
     periodSeconds: 10
 
-volumes:
-  - name: app-data
-    emptyDir: {}
+  volumes:
+    - name: app-data
+      emptyDir: {}
 
 service:
   selector:
