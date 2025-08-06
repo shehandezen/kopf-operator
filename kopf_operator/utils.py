@@ -18,12 +18,14 @@ def load_defaults(kind: str) -> Dict[str, Any]:
         return yaml.safe_load(f)
     
 def deep_merge(user: Dict[str, Any], default: Dict[str, Any]) -> Dict[str, Any]:
+    user = dict(user)  
     for key, value in default.items():
-        if key not in user:
-            user[key] = value
-        elif isinstance(value, dict) and isinstance(user.get(key), dict):
+        if key in user and isinstance(user[key], dict) and isinstance(value, dict):
             user[key] = deep_merge(user[key], value)
+        else:
+            user[key] = value
     return user
+
 
 
 
@@ -37,3 +39,11 @@ def render_templates(obj: Any, context: dict) -> Any:
     else:
         return obj
 
+
+def camel_to_snake(name: str) -> str:
+    import re
+    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+def normalize_keys(d: Dict[str, Any]) -> Dict[str, Any]:
+    return {camel_to_snake(k): v for k, v in d.items()}

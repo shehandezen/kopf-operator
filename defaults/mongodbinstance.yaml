@@ -29,7 +29,7 @@ spec:
     livenessProbe:
       exec:
         command:
-          - mongo
+          - mongosh
           - --eval
           - "db.adminCommand('ping')"
       initialDelaySeconds: 30
@@ -37,15 +37,15 @@ spec:
     readinessProbe:
       exec:
         command:
-          - mongo
+          - mongosh
           - --eval
           - "db.adminCommand('ping')"
       initialDelaySeconds: 10
       periodSeconds: 5
-    volumes:
-      - name: "{{ name }}-data"
-        persistentVolumeClaim:
-          claimName: "{{ name }}-pvc"
+  volumes:
+    - name: "{{ name }}-data"
+      persistentVolumeClaim:
+        claimName: "{{ name }}-pvc"
   affinity:
     podAntiAffinity:
       preferredDuringSchedulingIgnoredDuringExecution:
