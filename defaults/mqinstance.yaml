@@ -1,0 +1,61 @@
+spec:
+  replicas: 1
+  container:
+    name: "{{ name }}"
+    image: rabbitmq:3.12-management
+    ports:
+      - containerPort: 5672
+      - containerPort: 15672
+    env:
+      - name: RABBITMQ_DEFAULT_USER
+        valueFrom:
+          secretKeyRef:
+            name: "{{ name }}-secrets"
+            key: rabbitmq-username
+      - name: RABBITMQ_DEFAULT_PASS
+        valueFrom:
+          secretKeyRef:
+            name: "{{ name }}-secrets"
+            key: rabbitmq-password
+    volumeMounts:
+      - name: "{{ name }}-data"
+        mountPath: /var/lib/rabbitmq
+    resources:
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+    readinessProbe:
+      tcpSocket:
+        port: 5672
+      initialDelaySeconds: 60
+      periodSeconds: 5
+    livenessProbe:
+      tcpSocket:
+        port: 5672
+      initialDelaySeconds: 60
+      periodSeconds: 10
+    volumes:
+      - name: "{{ name }}-data"
+        persistentVolumeClaim:
+          claimName: "{{ name }}-pvc"
+  service:
+    selector:
+      app: "{{ name }}"
+    type: ClusterIP
+    ports:
+      - name: amqp
+        port: 5672
+        targetPort: 5672
+      - name: management
+        port: 15672
+        targetPort: 15672
+  pvc:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 10Gi
+    storageClassName: standard

@@ -68,13 +68,18 @@ class BaseKopfOperator:
         if "secret" in spec:
             self.apply_resource(self.core_v1.create_namespaced_secret, ns, ResourceFactory.secret(name, ns, spec["secret"]))
 
-        if "pvc" in spec:
-            self.log("pvc start creating...")
-            self.apply_resource(self.core_v1.create_namespaced_persistent_volume_claim, ns, ResourceFactory.pvc(name, ns, spec["pvc"]))
-
-        self.apply_resource(self.apps_v1.create_namespaced_deployment, ns, ResourceFactory.deployment(name, ns, spec))
         self.apply_resource(self.core_v1.create_namespaced_service, ns, ResourceFactory.service(name, ns, spec))
         
+        if "stateful" in spec:
+            self.apply_resource(self.apps_v1.create_namespaced_stateful_set, ns, ResourceFactory.statefulset(name, ns, spec["stateful"]), f"{name}-stateful")
+            self.apply_resource(self.core_v1.create_namespaced_service, ns, ResourceFactory.service(name, ns, spec, True))
+        else: 
+            if "pvc" in spec:
+                self.apply_resource(self.core_v1.create_namespaced_persistent_volume_claim, ns, ResourceFactory.pvc(name, ns, spec["pvc"]))
+
+            self.apply_resource(self.apps_v1.create_namespaced_deployment, ns, ResourceFactory.deployment(name, ns, spec))
+            self.apply_resource(self.core_v1.create_namespaced_service, ns, ResourceFactory.service(name, ns, spec))
+
         if "pod" in spec:
             self.apply_resource(self.core_v1.create_namespaced_pod, ns, ResourceFactory.pod(name, ns, spec["pod"]))
 
@@ -99,11 +104,16 @@ class BaseKopfOperator:
         if "secret" in spec:
             self.apply_resource(self.core_v1.patch_namespaced_secret, ns, ResourceFactory.secret(name, ns, spec["secret"]), name)
 
-        if "pvc" in spec:
-            self.apply_resource(self.core_v1.patch_namespaced_persistent_volume_claim, ns, ResourceFactory.pvc(name, ns, spec["pvc"]), name)
 
-        self.apply_resource(self.apps_v1.patch_namespaced_deployment, ns, ResourceFactory.deployment(name, ns, spec), name)
-        self.apply_resource(self.core_v1.patch_namespaced_service, ns, ResourceFactory.service(name, ns, spec), f"{name}-svc")
+        if "stateful" in spec:
+            self.apply_resource(self.apps_v1.patch_namespaced_stateful_set, ns, ResourceFactory.statefulset(name, ns, spec["stateful"]), f"{name}-stateful")
+            self.apply_resource(self.core_v1.patch_namespaced_service, ns, ResourceFactory.service(name, ns, spec, True), f"{name}-svc")
+        else:
+            if "pvc" in spec:
+                self.apply_resource(self.core_v1.patch_namespaced_persistent_volume_claim, ns, ResourceFactory.pvc(name, ns, spec["pvc"]), name)
+                
+            self.apply_resource(self.apps_v1.patch_namespaced_deployment, ns, ResourceFactory.deployment(name, ns, spec), name)
+            self.apply_resource(self.core_v1.patch_namespaced_service, ns, ResourceFactory.service(name, ns, spec), f"{name}-svc")
 
         if "pod" in spec:
             self.apply_resource(self.core_v1.patch_namespaced_pod, ns, ResourceFactory.pod(name, ns, spec["pod"]))
@@ -131,6 +141,7 @@ class BaseKopfOperator:
             (self.core_v1.delete_namespaced_config_map, f"{name}-config"),
             (self.core_v1.delete_namespaced_service, f"{name}-svc"),
             (self.apps_v1.delete_namespaced_deployment, name),
+            (self.apps_v1.delete_namespaced_stateful_set, f"{name}-stateful"),
             (self.core_v1.delete_namespaced_pod, f"{name}-pod"),
             (self.batch_v1.delete_namespaced_job, f"{name}-job"),
             (self.batch_v1.delete_namespaced_cron_job, f"{name}-cron-job"),
@@ -172,6 +183,7 @@ class BaseKopfOperator:
             "ingress": (f"{name}-ingress", self.networking_v1.read_namespaced_ingress, self.networking_v1.patch_namespaced_ingress, ResourceFactory.ingress),
             "hpa": (f"{name}-hpa", self.autoscaling_v1.read_namespaced_horizontal_pod_autoscaler, self.autoscaling_v1.patch_namespaced_horizontal_pod_autoscaler, ResourceFactory.hpa),
             "pod": (f"{name}-pod", self.core_v1.read_namespaced_pod, self.core_v1.patch_namespaced_pod, ResourceFactory.pod),
+            "pod": (f"{name}-stateful", self.apps_v1.read_namespaced_stateful_set, self.apps_v1.patch_namespaced_stateful_set, ResourceFactory.statefulset),
             "job": (f"{name}-job", self.batch_v1.read_namespaced_job, self.batch_v1.patch_namespaced_job, ResourceFactory.job),
             "cron-job": (f"{name}-cron-job", self.batch_v1.read_namespaced_cron_job, self.batch_v1.patch_namespaced_cron_job, ResourceFactory.pvc),
         }

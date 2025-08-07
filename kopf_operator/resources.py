@@ -10,7 +10,7 @@ from kubernetes.client import (
     V1HorizontalPodAutoscalerSpec, V1TypedLocalObjectReference, V1Affinity, V1ExecAction,
     V1HTTPGetAction, V1TCPSocketAction, V1PersistentVolumeClaimVolumeSource, V1ConfigMapVolumeSource,
     V1SecretVolumeSource, V1IngressBackend, V1IngressServiceBackend, V1ServiceBackendPort, V1Pod,
-    V1JobSpec, V1Job, V1CronJob, V1JobTemplateSpec, V1CronJobSpec
+    V1JobSpec, V1Job, V1CronJob, V1JobTemplateSpec, V1CronJobSpec, V1StatefulSet, V1StatefulSetSpec
 )
 
 
@@ -208,7 +208,7 @@ class ResourceFactory:
 
 
     @staticmethod
-    def service(name: str, ns: str, spec: Dict[str, Any]) -> V1Service:
+    def service(name: str, ns: str, spec: Dict[str, Any], headless:bool=False) -> V1Service:
         logger.debug(f"Creating Service for: {name} in namespace: {ns} with spec: {spec}")
         svc_spec = spec.get("service", {})
 
@@ -227,7 +227,8 @@ class ResourceFactory:
             spec=V1ServiceSpec(
                 selector=svc_spec.get("selector", ResourceFactory.labels(name)),
                 ports=ports,
-                type=svc_spec.get("type", "ClusterIP")
+                type=svc_spec.get("type", "ClusterIP") if not headless else None,
+                cluster_ip=None if headless else None
             )
         )
         logger.debug(f"Service created: {service}")
@@ -336,3 +337,39 @@ class ResourceFactory:
         )
         logger.debug(f"HPA created: {hpa}")
         return hpa
+    
+    @staticmethod
+    def statefulset(name: str, ns: str, spec: Dict[str, Any]) -> V1StatefulSet:
+        logger.debug(f"Creating StatefulSet for: {name} with spec: {spec}")
+        labels = ResourceFactory.labels(name)
+
+        pod_template = V1PodTemplateSpec(
+            metadata=V1ObjectMeta(labels=labels),
+            spec=ResourceFactory.build_pod_spec(name, ns, spec)
+        )
+
+        pvc_templates: List[V1PersistentVolumeClaim] = []
+        for vct in spec.get("volumeClaimTemplates", []):
+            vct = normalize_keys(vct)
+            pvc_templates.append(
+                V1PersistentVolumeClaim(
+                    metadata=V1ObjectMeta(name=f"{vct['metadata']['name']}-pvc"),
+                    spec=V1PersistentVolumeClaimSpec(**vct["spec"])
+                )
+            )
+
+        sts_spec = V1StatefulSetSpec(
+            service_name= f"{name}-svc",
+            replicas=spec.get("replicas", 1),
+            selector=V1LabelSelector(match_labels=labels),
+            template=pod_template,
+            volume_claim_templates=pvc_templates
+        )
+
+        sts = V1StatefulSet(
+            metadata=meta(f"{name}-stateful", ns, labels),
+            spec=sts_spec
+        )
+
+        logger.debug(f"StatefulSet created: {sts}")
+        return sts
