@@ -22,6 +22,7 @@ class BaseKopfOperator:
         self.version = version
         self.core_v1 = k8s.CoreV1Api()
         self.apps_v1 = k8s.AppsV1Api()
+        self.batch_v1 = k8s.BatchV1Api()
         self.networking_v1 = k8s.NetworkingV1Api()
         self.autoscaling_v1 = k8s.AutoscalingV1Api()
         self.api = k8s.CustomObjectsApi()
@@ -74,6 +75,15 @@ class BaseKopfOperator:
         self.apply_resource(self.apps_v1.create_namespaced_deployment, ns, ResourceFactory.deployment(name, ns, spec))
         self.apply_resource(self.core_v1.create_namespaced_service, ns, ResourceFactory.service(name, ns, spec))
         
+        if "pod" in spec:
+            self.apply_resource(self.core_v1.create_namespaced_pod, ns, ResourceFactory.pod(name, ns, spec["pod"]))
+
+        if "job" in spec:
+            self.apply_resource(self.batch_v1.create_namespaced_job,ns,ResourceFactory.job(name, ns, spec["job"]))
+
+        if "cronjob" in spec:
+            self.apply_resource(self.batch_v1.create_namespaced_cron_job,ns,ResourceFactory.cronjob(name, ns, spec["cronjob"]))
+            
         if "ingress" in spec:
             self.apply_resource(self.networking_v1.create_namespaced_ingress, ns, ResourceFactory.ingress(name, ns, spec["ingress"]))
 
@@ -95,6 +105,14 @@ class BaseKopfOperator:
         self.apply_resource(self.apps_v1.patch_namespaced_deployment, ns, ResourceFactory.deployment(name, ns, spec), name)
         self.apply_resource(self.core_v1.patch_namespaced_service, ns, ResourceFactory.service(name, ns, spec), f"{name}-svc")
 
+        if "pod" in spec:
+            self.apply_resource(self.core_v1.patch_namespaced_pod, ns, ResourceFactory.pod(name, ns, spec["pod"]))
+
+        if "job" in spec:
+            self.apply_resource(self.batch_v1.patch_namespaced_job,ns,ResourceFactory.job(name, ns, spec["job"]))
+
+        if "cronjob" in spec:
+            self.apply_resource(self.batch_v1.patch_namespaced_cron_job,ns,ResourceFactory.cronjob(name, ns, spec["cronjob"]))
         
         if "ingress" in spec:
             self.apply_resource(self.networking_v1.patch_namespaced_ingress, ns, ResourceFactory.ingress(name, ns, spec["ingress"]), name)
@@ -113,6 +131,9 @@ class BaseKopfOperator:
             (self.core_v1.delete_namespaced_config_map, f"{name}-config"),
             (self.core_v1.delete_namespaced_service, f"{name}-svc"),
             (self.apps_v1.delete_namespaced_deployment, name),
+            (self.core_v1.delete_namespaced_pod, f"{name}-pod"),
+            (self.batch_v1.delete_namespaced_job, f"{name}-job"),
+            (self.batch_v1.delete_namespaced_cron_job, f"{name}-cron-job"),
         ]
         for deleter, res_name in resource_deletors:
             try:
@@ -149,7 +170,10 @@ class BaseKopfOperator:
             "secret": (f"{name}-secrets", self.core_v1.read_namespaced_secret, self.core_v1.patch_namespaced_secret, ResourceFactory.secret),
             "pvc": (f"{name}-pvc", self.core_v1.read_namespaced_persistent_volume_claim, self.core_v1.patch_namespaced_persistent_volume_claim, ResourceFactory.pvc),
             "ingress": (f"{name}-ingress", self.networking_v1.read_namespaced_ingress, self.networking_v1.patch_namespaced_ingress, ResourceFactory.ingress),
-            "hpa": (f"{name}-hpa", self.autoscaling_v1.read_namespaced_horizontal_pod_autoscaler, self.autoscaling_v1.patch_namespaced_horizontal_pod_autoscaler, ResourceFactory.hpa)
+            "hpa": (f"{name}-hpa", self.autoscaling_v1.read_namespaced_horizontal_pod_autoscaler, self.autoscaling_v1.patch_namespaced_horizontal_pod_autoscaler, ResourceFactory.hpa),
+            "pod": (f"{name}-pod", self.core_v1.read_namespaced_pod, self.core_v1.patch_namespaced_pod, ResourceFactory.pod),
+            "job": (f"{name}-job", self.batch_v1.read_namespaced_job, self.batch_v1.patch_namespaced_job, ResourceFactory.job),
+            "cron-job": (f"{name}-cron-job", self.batch_v1.read_namespaced_cron_job, self.batch_v1.patch_namespaced_cron_job, ResourceFactory.pvc),
         }
 
         for key, (resource_name, read_fn, patch_fn, factory_fn) in optional_resources.items():

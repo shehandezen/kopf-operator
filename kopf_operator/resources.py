@@ -9,7 +9,8 @@ from kubernetes.client import (
     V1IngressRule, V1HTTPIngressRuleValue, V1HTTPIngressPath, V1HorizontalPodAutoscaler,
     V1HorizontalPodAutoscalerSpec, V1TypedLocalObjectReference, V1Affinity, V1ExecAction,
     V1HTTPGetAction, V1TCPSocketAction, V1PersistentVolumeClaimVolumeSource, V1ConfigMapVolumeSource,
-    V1SecretVolumeSource, V1IngressBackend, V1IngressServiceBackend, V1ServiceBackendPort
+    V1SecretVolumeSource, V1IngressBackend, V1IngressServiceBackend, V1ServiceBackendPort, V1Pod,
+    V1JobSpec, V1Job, V1CronJob, V1JobTemplateSpec, V1CronJobSpec
 )
 
 
@@ -26,86 +27,9 @@ class ResourceFactory:
         labels = {"app": name}
         logger.debug(f"Generated labels: {labels}")
         return labels
-
+    
     @staticmethod
-    def deployment(name: str, ns: str, spec: Dict[str, Any]) -> V1Deployment:
-        logger.debug(f"Creating Deployment for: {name} in namespace: {ns} with spec: {spec}")
-        container_spec = spec.get("container", {})
-        affinity = spec.get("affinity")
-
-        volumes_spec = spec.get("volumes", [])
-
-        def to_env_vars(env_list):
-            from kubernetes.client import V1EnvVar, V1EnvVarSource, V1SecretKeySelector
-            result = []
-            for env in env_list:
-                if "valueFrom" in env:
-                    value_from = V1EnvVarSource(
-                        secret_key_ref=V1SecretKeySelector(
-                            name=env["valueFrom"]["secretKeyRef"]["name"],
-                            key=env["valueFrom"]["secretKeyRef"]["key"]
-                        )
-                    )
-                    result.append(V1EnvVar(name=env["name"], value_from=value_from))
-                else:
-                    result.append(V1EnvVar(name=env["name"], value=env["value"]))
-            return result
-
-        def to_volume_mounts(mounts_list):
-            from kubernetes.client import V1VolumeMount
-
-            result = []
-            for mount in mounts_list:
-                try:
-                    norm = normalize_keys(mount)
-                    result.append(V1VolumeMount(**norm))
-                except TypeError as e:
-                    logger.error(f"Invalid volumeMount entry: {mount}, error: {e}")
-                    raise
-            return result
-
-
-        def to_volumes(volumes_list: List[Dict[str, Any]]) -> List[V1Volume]:
-            result = []
-
-            defined_volumes = {v["name"] for v in volumes_list}
-            for mount in container_spec.get("volumeMounts", []):
-                if mount["name"] not in defined_volumes:
-                    logger.warning(f"Auto-adding emptyDir for missing volume: {mount['name']}")
-                    volumes_list.append({"name": mount["name"], "emptyDir": {}})
-
-            for v in volumes_list:
-                try:
-                    v = normalize_keys(v)
-
-                    if "persistentVolumeClaim" in v or "persistent_volume_claim" in v:
-                        pvc_data = v.pop("persistentVolumeClaim", v.pop("persistent_volume_claim", {}))
-                        v["persistent_volume_claim"] = V1PersistentVolumeClaimVolumeSource(
-                            claim_name=pvc_data.get("claimName") or pvc_data.get("claim_name")
-                        )
-
-                    if "config_map" in v:
-                        cm = v.pop("config_map")
-                        v["config_map"] = V1ConfigMapVolumeSource(
-                            name=cm.get("name"),
-                            items=cm.get("items")
-                        )
-
-                    if "secret" in v:
-                        sec = v.pop("secret")
-                        v["secret"] = V1SecretVolumeSource(
-                            secret_name=sec.get("secret_name"),
-                            items=sec.get("items")
-                        )
-
-                    result.append(V1Volume(**v))
-                except Exception as e:
-                    logger.error(f"Invalid volume entry: {v}, error: {e}")
-
-            return result
-
-        
-        def normalize_probe(probe_dict: Dict[str, Any]) -> V1Probe:
+    def normalize_probe(probe_dict: Dict[str, Any]) -> V1Probe:
             probe_dict = normalize_keys(probe_dict)
 
             if "exec" in probe_dict:
@@ -130,43 +54,156 @@ class ResourceFactory:
                 )
 
             return V1Probe(**probe_dict)
+    
+    @staticmethod
+    def to_env_vars(env_list):
+        from kubernetes.client import V1EnvVar, V1EnvVarSource, V1SecretKeySelector
+        result = []
+        for env in env_list:
+            if "valueFrom" in env:
+                value_from = V1EnvVarSource(
+                    secret_key_ref=V1SecretKeySelector(
+                        name=env["valueFrom"]["secretKeyRef"]["name"],
+                        key=env["valueFrom"]["secretKeyRef"]["key"]
+                    )                    )
+                result.append(V1EnvVar(name=env["name"], value_from=value_from))
+            else:
+                    result.append(V1EnvVar(name=env["name"], value=env["value"]))
+        return result
 
-        container = V1Container(
+    @staticmethod
+    def to_volume_mounts(mounts_list):
+        from kubernetes.client import V1VolumeMount
+
+        result = []
+        for mount in mounts_list:
+            try:
+                norm = normalize_keys(mount)
+                result.append(V1VolumeMount(**norm))
+            except TypeError as e:
+                logger.error(f"Invalid volumeMount entry: {mount}, error: {e}")
+                raise
+        return result
+
+    @staticmethod
+    def to_volumes(volumes_list: List[Dict[str, Any]], container_spec: Dict[str, Any]) -> List[V1Volume]:
+        result = []
+
+        defined_volumes = {v["name"] for v in volumes_list}
+        for mount in container_spec.get("volumeMounts", []):
+            if mount["name"] not in defined_volumes:
+                logger.warning(f"Auto-adding emptyDir for missing volume: {mount['name']}")
+                volumes_list.append({"name": mount["name"], "emptyDir": {}})
+
+        for v in volumes_list:
+            try:
+                v = normalize_keys(v)
+
+                if "persistentVolumeClaim" in v or "persistent_volume_claim" in v:
+                    pvc_data = v.pop("persistentVolumeClaim", v.pop("persistent_volume_claim", {}))
+                    v["persistent_volume_claim"] = V1PersistentVolumeClaimVolumeSource(
+                        claim_name=pvc_data.get("claimName") or pvc_data.get("claim_name")
+                    )
+
+                if "config_map" in v:
+                    cm = v.pop("config_map")
+                    v["config_map"] = V1ConfigMapVolumeSource(
+                        name=cm.get("name"),
+                        items=cm.get("items")
+                    )
+
+                if "secret" in v:
+                    sec = v.pop("secret")
+                    v["secret"] = V1SecretVolumeSource(
+                        secret_name=sec.get("secret_name"),
+                        items=sec.get("items")
+                    )
+
+                result.append(V1Volume(**v))
+            except Exception as e:
+                logger.error(f"Invalid volume entry: {v}, error: {e}")
+
+        return result
+    
+    @staticmethod
+    def build_container(name: str, container_spec: Dict[str, Any]):
+        return V1Container(
             name=container_spec.get("name", name),
             image=container_spec.get("image", "nginx"),
             ports=container_spec.get("ports", []),
-            env=to_env_vars(container_spec.get("env", [])),
-            volume_mounts=to_volume_mounts(container_spec.get("volumeMounts", [])),
-            resources=V1ResourceRequirements(**container_spec.get("resources", {})),
-            liveness_probe=normalize_probe(container_spec["livenessProbe"]) if "livenessProbe" in container_spec else None,
-            readiness_probe=normalize_probe(container_spec["readinessProbe"]) if "readinessProbe" in container_spec else None
-
+            env=ResourceFactory.to_env_vars(container_spec.get("env", [])),
+            volume_mounts=ResourceFactory.to_volume_mounts(container_spec.get("volumeMounts", [])),
+            resources=V1ResourceRequirements(**normalize_keys(container_spec.get("resources", {}))),
+            liveness_probe=ResourceFactory.normalize_probe(container_spec["livenessProbe"]) if "livenessProbe" in container_spec else None,
+            readiness_probe=ResourceFactory.normalize_probe(container_spec["readinessProbe"]) if "readinessProbe" in container_spec else None
         )
 
-        pod_spec = V1PodSpec(
+    @staticmethod
+    def build_pod_spec(name: str, ns: str, spec: Dict[str, Any]) -> V1PodSpec:
+        container_spec = spec.get("container", {})
+        container = ResourceFactory.build_container(name, container_spec)
+        return V1PodSpec(
             containers=[container],
-            volumes=to_volumes(volumes_spec),
-            affinity=V1Affinity(**normalize_keys(affinity)) if affinity else None
+            restart_policy=spec.get("restartPolicy", "Always"),
+            volumes=ResourceFactory.to_volumes(spec.get("volumes", []), container_spec),
+            affinity=V1Affinity(**normalize_keys(spec.get("affinity", {}))) if spec.get("affinity") else None
         )
 
+    @staticmethod
+    def pod(name: str, ns: str, spec: Dict[str, Any]) -> V1Pod:
+        return V1Pod(
+            metadata=meta(f"{name}-pod", ns, ResourceFactory.labels(name)),
+            spec=ResourceFactory.build_pod_spec(name, ns, spec)
+        )
+
+    @staticmethod
+    def deployment(name: str, ns: str, spec: Dict[str, Any]) -> V1Deployment:
         pod_template = V1PodTemplateSpec(
             metadata=V1ObjectMeta(labels=ResourceFactory.labels(name)),
-            spec=pod_spec
+            spec=ResourceFactory.build_pod_spec(name, ns, spec)
         )
-
         deployment_spec = V1DeploymentSpec(
             replicas=spec.get("replicas", 1),
             selector=V1LabelSelector(match_labels=ResourceFactory.labels(name)),
             template=pod_template
         )
-
-        deployment = V1Deployment(
+        return V1Deployment(
             metadata=meta(name, ns, ResourceFactory.labels(name)),
             spec=deployment_spec
         )
 
-        logger.debug(f"Deployment created: {deployment}")
-        return deployment
+    @staticmethod
+    def job(name: str, ns: str, spec: Dict[str, Any]) -> V1Job:
+        pod_template = V1PodTemplateSpec(
+            metadata=V1ObjectMeta(labels=ResourceFactory.labels(name)),
+            spec=ResourceFactory.build_pod_spec(name, ns, spec)
+        )
+        job_spec = V1JobSpec(
+            template=pod_template,
+            backoff_limit=spec.get("backoffLimit", 4),
+            completions=spec.get("completions"),
+            parallelism=spec.get("parallelism")
+        )
+        return V1Job(
+            metadata=meta(f"{name}-job", ns, ResourceFactory.labels(name)),
+            spec=job_spec
+        )
+
+    @staticmethod
+    def cronjob(name: str, ns: str, spec: Dict[str, Any]) -> V1CronJob:
+        job_template = V1JobTemplateSpec(
+            spec=ResourceFactory.job(name, ns, spec).spec
+        )
+        cronjob_spec = V1CronJobSpec(
+            schedule=spec.get("schedule", "*/5 * * * *"),
+            job_template=job_template,
+            successful_jobs_history_limit=spec.get("successfulJobsHistoryLimit", 3),
+            failed_jobs_history_limit=spec.get("failedJobsHistoryLimit", 1)
+        )
+        return V1CronJob(
+            metadata=meta(f"{name}-cron-job", ns, ResourceFactory.labels(name)),
+            spec=cronjob_spec
+        )
 
 
 

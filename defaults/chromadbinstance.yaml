@@ -1,0 +1,66 @@
+spec:
+  replicas: 1
+  container:
+    name: "{{ name }}"
+    image: chromadb/chroma
+    ports:
+      - containerPort: 8000
+    env:
+      - name: IS_PERSISTENT
+        value: "true"
+      - name: PERSIST_DIRECTORY
+        value: "/chroma/chroma"
+      - name: CHROMA_SERVER_AUTH_CREDENTIALS
+        valueFrom:
+          secretKeyRef:
+            name: "{{ name }}-secrets"
+            key: chroma-token
+      - name: CHROMA_SERVER_AUTH_CREDENTIALS_PROVIDER
+        value: "chromadb.auth.token.TokenConfigServerAuthCredentialsProvider"
+      - name: CHROMA_SERVER_AUTH_TOKEN_TRANSPORT_HEADER
+        value: "AUTHORIZATION"
+      - name: CHROMA_SERVER_AUTH_PROVIDER
+        value: "chromadb.auth.token.TokenAuthServerProvider"
+    volumeMounts:
+      - name: "{{ name }}-data"
+        mountPath: /chroma/chroma
+    resources:
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+    readinessProbe:
+      tcpSocket:
+        port: 8000
+      failureThreshold: 6
+      initialDelaySeconds: 40
+      timeoutSeconds: 30
+      periodSeconds: 60
+    livenessProbe:
+      tcpSocket:
+        port: 8000
+      failureThreshold: 5
+      initialDelaySeconds: 80
+      timeoutSeconds: 30
+      periodSeconds: 20
+  volumes:
+    - name: "{{ name }}-data"
+      persistentVolumeClaim:
+        claimName: "{{ name }}-pvc"
+  service:
+    selector:
+      app: "{{ name }}"
+    ports:
+      - port: 8000
+        targetPort: 8000
+        protocol: TCP
+    type: ClusterIP
+  pvc:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 10Gi
+    storageClassName: standard
