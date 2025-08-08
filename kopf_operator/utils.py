@@ -1,7 +1,7 @@
 import os
 import yaml
 import copy
-from typing import Dict, Any
+from typing import Dict, Any, List, Union
 from jinja2 import Template
 
 DEFAULTS_DIR = os.getenv("DEFAULTS_DIR", os.path.join(os.path.dirname(__file__), "../defaults"))
@@ -45,5 +45,13 @@ def camel_to_snake(name: str) -> str:
     s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
     return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
 
-def normalize_keys(d: Dict[str, Any]) -> Dict[str, Any]:
-    return {camel_to_snake(k): v for k, v in d.items()}
+def normalize_keys(data: Union[Dict[str, Any], List[Any], Any]) -> Any:
+    if isinstance(data, dict):
+        return {
+            camel_to_snake(key): normalize_keys(value)
+            for key, value in data.items()
+        }
+    elif isinstance(data, list):
+        return [normalize_keys(item) for item in data]
+    else:
+        return data

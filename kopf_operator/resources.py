@@ -10,7 +10,8 @@ from kubernetes.client import (
     V1HorizontalPodAutoscalerSpec, V1TypedLocalObjectReference, V1Affinity, V1ExecAction,
     V1HTTPGetAction, V1TCPSocketAction, V1PersistentVolumeClaimVolumeSource, V1ConfigMapVolumeSource,
     V1SecretVolumeSource, V1IngressBackend, V1IngressServiceBackend, V1ServiceBackendPort, V1Pod,
-    V1JobSpec, V1Job, V1CronJob, V1JobTemplateSpec, V1CronJobSpec, V1StatefulSet, V1StatefulSetSpec
+    V1JobSpec, V1Job, V1CronJob, V1JobTemplateSpec, V1CronJobSpec, V1StatefulSet, V1StatefulSetSpec, 
+    V1EnvVarSource, V1SecretKeySelector, V1ConfigMapKeySelector, V1ObjectFieldSelector, V1ResourceFieldSelector,
 )
 
 
@@ -57,18 +58,48 @@ class ResourceFactory:
     
     @staticmethod
     def to_env_vars(env_list):
-        from kubernetes.client import V1EnvVar, V1EnvVarSource, V1SecretKeySelector
         result = []
+        
         for env in env_list:
-            if "valueFrom" in env:
-                value_from = V1EnvVarSource(
-                    secret_key_ref=V1SecretKeySelector(
-                        name=env["valueFrom"]["secretKeyRef"]["name"],
-                        key=env["valueFrom"]["secretKeyRef"]["key"]
-                    )                    )
-                result.append(V1EnvVar(name=env["name"], value_from=value_from))
-            else:
-                    result.append(V1EnvVar(name=env["name"], value=env["value"]))
+            env_var = V1EnvVar(name=env["name"])
+
+            if "value" in env:
+                env_var.value = env["value"]
+
+            elif "valueFrom" in env:
+                src = env["valueFrom"]
+                value_from = V1EnvVarSource()
+
+                if "secretKeyRef" in src:
+                    value_from.secret_key_ref = V1SecretKeySelector(
+                        name=src["secretKeyRef"]["name"],
+                        key=src["secretKeyRef"]["key"],
+                        optional=src["secretKeyRef"].get("optional")
+                    )
+                elif "configMapKeyRef" in src:
+                    value_from.config_map_key_ref = V1ConfigMapKeySelector(
+                        name=src["configMapKeyRef"]["name"],
+                        key=src["configMapKeyRef"]["key"],
+                        optional=src["configMapKeyRef"].get("optional")
+                    )
+                elif "fieldRef" in src:
+                    value_from.field_ref = V1ObjectFieldSelector(
+                        field_path=src["fieldRef"]["fieldPath"],
+                        api_version=src["fieldRef"].get("apiVersion")
+                    )
+                elif "resourceFieldRef" in src:
+                    value_from.resource_field_ref = V1ResourceFieldSelector(
+                        container_name=src["resourceFieldRef"].get("containerName"),
+                        resource=src["resourceFieldRef"]["resource"],
+                        divisor=src["resourceFieldRef"].get("divisor")
+                    )
+                else:
+                    raise ValueError(f"Unsupported valueFrom type: {list(src.keys())}")
+
+                env_var.value_from = value_from
+
+            result.append(env_var)
+        
         return result
 
     @staticmethod
@@ -131,6 +162,8 @@ class ResourceFactory:
             name=container_spec.get("name", name),
             image=container_spec.get("image", "nginx"),
             ports=container_spec.get("ports", []),
+            command=container_spec.get("command", None), 
+            args=container_spec.get("args", None), 
             env=ResourceFactory.to_env_vars(container_spec.get("env", [])),
             volume_mounts=ResourceFactory.to_volume_mounts(container_spec.get("volumeMounts", [])),
             resources=V1ResourceRequirements(**normalize_keys(container_spec.get("resources", {}))),
@@ -141,13 +174,23 @@ class ResourceFactory:
     @staticmethod
     def build_pod_spec(name: str, ns: str, spec: Dict[str, Any]) -> V1PodSpec:
         container_spec = spec.get("container", {})
-        container = ResourceFactory.build_container(name, container_spec)
+        main_container = ResourceFactory.build_container(name, container_spec)
+
+        # Process initContainers if defined
+        init_containers_data = spec.get("initContainers", [])
+        init_containers = [
+            ResourceFactory.build_container(f"{name}-init-{i}", ic)
+            for i, ic in enumerate(init_containers_data)
+        ] if init_containers_data else []
+
         return V1PodSpec(
-            containers=[container],
+            containers=[main_container],
+            init_containers=init_containers,
             restart_policy=spec.get("restartPolicy", "Always"),
             volumes=ResourceFactory.to_volumes(spec.get("volumes", []), container_spec),
             affinity=V1Affinity(**normalize_keys(spec.get("affinity", {}))) if spec.get("affinity") else None
         )
+    
 
     @staticmethod
     def pod(name: str, ns: str, spec: Dict[str, Any]) -> V1Pod:
@@ -223,14 +266,19 @@ class ResourceFactory:
         ports = [normalize_port(p) for p in svc_spec.get("ports", [{"port": 80, "targetPort": 80}])]
 
         service = V1Service(
-            metadata=meta(f"{name}-svc", ns, ResourceFactory.labels(name)),
+            metadata=meta(
+                f"{name}-headless" if headless else f"{name}-svc",
+                ns,
+                ResourceFactory.labels(name)
+            ),
             spec=V1ServiceSpec(
                 selector=svc_spec.get("selector", ResourceFactory.labels(name)),
                 ports=ports,
-                type=svc_spec.get("type", "ClusterIP") if not headless else None,
-                cluster_ip=None if headless else None
+                type="ClusterIP",
+                cluster_ip="None" if headless else None  
             )
         )
+
         logger.debug(f"Service created: {service}")
         return service
 
@@ -359,7 +407,7 @@ class ResourceFactory:
             )
 
         sts_spec = V1StatefulSetSpec(
-            service_name= f"{name}-svc",
+            service_name= f"{name}-headless",
             replicas=spec.get("replicas", 1),
             selector=V1LabelSelector(match_labels=labels),
             template=pod_template,

@@ -1,46 +1,75 @@
 spec:
-  replicas: 1
-  container:
-    name: "{{ name }}"
-    image: rabbitmq:3.12-management
-    ports:
-      - containerPort: 5672
-      - containerPort: 15672
-    env:
-      - name: RABBITMQ_DEFAULT_USER
-        valueFrom:
-          secretKeyRef:
-            name: "{{ name }}-secrets"
-            key: rabbitmq-username
-      - name: RABBITMQ_DEFAULT_PASS
-        valueFrom:
-          secretKeyRef:
-            name: "{{ name }}-secrets"
-            key: rabbitmq-password
-    volumeMounts:
-      - name: "{{ name }}-data"
-        mountPath: /var/lib/rabbitmq
-    resources:
-      limits:
-        memory: "1Gi"
-        cpu: "500m"
-      requests:
-        memory: "512Mi"
-        cpu: "250m"
-    readinessProbe:
-      tcpSocket:
-        port: 5672
-      initialDelaySeconds: 60
-      periodSeconds: 5
-    livenessProbe:
-      tcpSocket:
-        port: 5672
-      initialDelaySeconds: 60
-      periodSeconds: 10
+  stateful:
+    replicas: 2
+    container:
+      name: "{{ name }}"
+      image: rabbitmq:3.12-management
+      ports:
+        - containerPort: 5672
+        - containerPort: 15672
+      env:
+        - name: RABBITMQ_DEFAULT_USER
+          valueFrom:
+            secretKeyRef:
+              name: "{{ name }}-secrets"
+              key: rabbitmq-username
+        - name: RABBITMQ_DEFAULT_PASS
+          valueFrom:
+            secretKeyRef:
+              name: "{{ name }}-secrets"
+              key: rabbitmq-password
+        - name: RABBITMQ_ERLANG_COOKIE
+          valueFrom:
+            secretKeyRef:
+              name: "{{ name }}-secrets"
+              key: rabbitmq-erlang-cookie
+        - name: RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS
+          value: "-rabbit cluster_formation.peer_discovery_backend=rabbit_peer_discovery_k8s -rabbit cluster_formation.k8s.host={{ name }}-headless"
+        - name: K8S_SERVICE_NAME
+          value: "{{ name }}-headless"
+        - name: RABBITMQ_CLUSTER_PARTITION_HANDLING
+          value: "autoheal"
+        - name: RABBITMQ_USE_LONGNAME
+          value: "true"
+        - name: RABBITMQ_NODENAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+      volumeMounts:
+        - name: "{{ name }}-data"
+          mountPath: /var/lib/rabbitmq
+      resources:
+        limits:
+          memory: "1Gi"
+          cpu: "500m"
+        requests:
+          memory: "512Mi"
+          cpu: "250m"
+      livenessProbe:
+        tcpSocket:
+          port: 5672
+        initialDelaySeconds: 60
+        periodSeconds: 5
+
+      readinessProbe:
+        tcpSocket:
+          port: 5672
+        initialDelaySeconds: 60
+        periodSeconds: 5
+
     volumes:
       - name: "{{ name }}-data"
-        persistentVolumeClaim:
-          claimName: "{{ name }}-pvc"
+        emptyDir: {}  
+    volumeClaimTemplates:
+      - metadata:
+          name: "{{ name }}"
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: "10Gi"
+          storageClassName: standard
   service:
     selector:
       app: "{{ name }}"
@@ -49,13 +78,8 @@ spec:
       - name: amqp
         port: 5672
         targetPort: 5672
+        protocol: TCP
       - name: management
         port: 15672
         targetPort: 15672
-  pvc:
-    accessModes:
-      - ReadWriteOnce
-    resources:
-      requests:
-        storage: 10Gi
-    storageClassName: standard
+        protocol: TCP

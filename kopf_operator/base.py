@@ -55,7 +55,7 @@ class BaseKopfOperator:
         spec = deepcopy(dict(spec)) 
         self.log(f"[DEBUG] user spec: {spec}")
         defaults = load_defaults(kind)
-        rendered = render_templates(defaults, {"name": name})
+        rendered = render_templates(defaults, {"name": name, "replica": spec.get("replicas", 1)})
         self.log(f"[DEBUG] default spec: {rendered}")
         return deep_merge(spec, rendered.get("spec"))
 
@@ -71,8 +71,9 @@ class BaseKopfOperator:
         self.apply_resource(self.core_v1.create_namespaced_service, ns, ResourceFactory.service(name, ns, spec))
         
         if "stateful" in spec:
-            self.apply_resource(self.apps_v1.create_namespaced_stateful_set, ns, ResourceFactory.statefulset(name, ns, spec["stateful"]), f"{name}-stateful")
+            self.apply_resource(self.apps_v1.create_namespaced_stateful_set, ns, ResourceFactory.statefulset(name, ns, spec["stateful"]))
             self.apply_resource(self.core_v1.create_namespaced_service, ns, ResourceFactory.service(name, ns, spec, True))
+            self.apply_resource(self.core_v1.create_namespaced_service, ns, ResourceFactory.service(name, ns, spec))
         else: 
             if "pvc" in spec:
                 self.apply_resource(self.core_v1.create_namespaced_persistent_volume_claim, ns, ResourceFactory.pvc(name, ns, spec["pvc"]))
@@ -99,21 +100,22 @@ class BaseKopfOperator:
         self.log(f"Updating all resources for {name} in {ns}")
         spec = self.apply_runtime_defaults(kind=self.kind, name=name, spec=spec)
         if "configmap" in spec:
-            self.apply_resource(self.core_v1.patch_namespaced_config_map, ns, ResourceFactory.configmap(name, ns, spec["configmap"]), name)
+            self.apply_resource(self.core_v1.patch_namespaced_config_map, ns, ResourceFactory.configmap(name, ns, spec["configmap"]))
 
         if "secret" in spec:
-            self.apply_resource(self.core_v1.patch_namespaced_secret, ns, ResourceFactory.secret(name, ns, spec["secret"]), name)
+            self.apply_resource(self.core_v1.patch_namespaced_secret, ns, ResourceFactory.secret(name, ns, spec["secret"]))
 
 
         if "stateful" in spec:
-            self.apply_resource(self.apps_v1.patch_namespaced_stateful_set, ns, ResourceFactory.statefulset(name, ns, spec["stateful"]), f"{name}-stateful")
-            self.apply_resource(self.core_v1.patch_namespaced_service, ns, ResourceFactory.service(name, ns, spec, True), f"{name}-svc")
+            self.apply_resource(self.apps_v1.patch_namespaced_stateful_set, ns, ResourceFactory.statefulset(name, ns, spec["stateful"]))
+            self.apply_resource(self.core_v1.patch_namespaced_service, ns, ResourceFactory.service(name, ns, spec, True))
+            self.apply_resource(self.core_v1.patch_namespaced_service, ns, ResourceFactory.service(name, ns, spec))
         else:
             if "pvc" in spec:
-                self.apply_resource(self.core_v1.patch_namespaced_persistent_volume_claim, ns, ResourceFactory.pvc(name, ns, spec["pvc"]), name)
-                
-            self.apply_resource(self.apps_v1.patch_namespaced_deployment, ns, ResourceFactory.deployment(name, ns, spec), name)
-            self.apply_resource(self.core_v1.patch_namespaced_service, ns, ResourceFactory.service(name, ns, spec), f"{name}-svc")
+                self.apply_resource(self.core_v1.patch_namespaced_persistent_volume_claim, ns, ResourceFactory.pvc(name, ns, spec["pvc"]))
+
+            self.apply_resource(self.apps_v1.patch_namespaced_deployment, ns, ResourceFactory.deployment(name, ns, spec))
+            self.apply_resource(self.core_v1.patch_namespaced_service, ns, ResourceFactory.service(name, ns, spec))
 
         if "pod" in spec:
             self.apply_resource(self.core_v1.patch_namespaced_pod, ns, ResourceFactory.pod(name, ns, spec["pod"]))
@@ -125,10 +127,10 @@ class BaseKopfOperator:
             self.apply_resource(self.batch_v1.patch_namespaced_cron_job,ns,ResourceFactory.cronjob(name, ns, spec["cronjob"]))
         
         if "ingress" in spec:
-            self.apply_resource(self.networking_v1.patch_namespaced_ingress, ns, ResourceFactory.ingress(name, ns, spec["ingress"]), name)
+            self.apply_resource(self.networking_v1.patch_namespaced_ingress, ns, ResourceFactory.ingress(name, ns, spec["ingress"]))
 
         if "hpa" in spec:
-            self.apply_resource(self.autoscaling_v1.patch_namespaced_horizontal_pod_autoscaler, ns, ResourceFactory.hpa(name, ns, spec["hpa"]), name)
+            self.apply_resource(self.autoscaling_v1.patch_namespaced_horizontal_pod_autoscaler, ns, ResourceFactory.hpa(name, ns, spec["hpa"]))
 
     def delete_all_resources(self, name: str, ns: str):
         self.log(f"Deleting all resources for {name} in {ns}")
@@ -140,6 +142,7 @@ class BaseKopfOperator:
             (self.core_v1.delete_namespaced_secret, f"{name}-secrets"),
             (self.core_v1.delete_namespaced_config_map, f"{name}-config"),
             (self.core_v1.delete_namespaced_service, f"{name}-svc"),
+            (self.core_v1.delete_namespaced_service, f"{name}-headless"),
             (self.apps_v1.delete_namespaced_deployment, name),
             (self.apps_v1.delete_namespaced_stateful_set, f"{name}-stateful"),
             (self.core_v1.delete_namespaced_pod, f"{name}-pod"),
@@ -158,13 +161,23 @@ class BaseKopfOperator:
         self.log(f"Reconciling resources for {name} in {ns}")
         spec = self.apply_runtime_defaults(kind=self.kind, name=name, spec=spec)
 
-        self._reconcile_resource(
-            resource_name=name,
+        if not "stateful" in spec:
+            self._reconcile_resource(
+                resource_name=name,
+                namespace=ns,
+                read_fn=self.apps_v1.read_namespaced_deployment,
+                patch_fn=self.apps_v1.patch_namespaced_deployment,
+                desired=ResourceFactory.deployment(name, ns, spec),
+                drift_checker=self._deployment_drifted
+            )
+        else:
+            self._reconcile_resource(
+            resource_name=f"{name}-headless",
             namespace=ns,
-            read_fn=self.apps_v1.read_namespaced_deployment,
-            patch_fn=self.apps_v1.patch_namespaced_deployment,
-            desired=ResourceFactory.deployment(name, ns, spec),
-            drift_checker=self._deployment_drifted
+            read_fn=self.core_v1.read_namespaced_service,
+            patch_fn=self.core_v1.patch_namespaced_service,
+            desired=ResourceFactory.service(name, ns, spec),
+            drift_checker=self._service_drifted
         )
 
         self._reconcile_resource(
@@ -183,7 +196,7 @@ class BaseKopfOperator:
             "ingress": (f"{name}-ingress", self.networking_v1.read_namespaced_ingress, self.networking_v1.patch_namespaced_ingress, ResourceFactory.ingress),
             "hpa": (f"{name}-hpa", self.autoscaling_v1.read_namespaced_horizontal_pod_autoscaler, self.autoscaling_v1.patch_namespaced_horizontal_pod_autoscaler, ResourceFactory.hpa),
             "pod": (f"{name}-pod", self.core_v1.read_namespaced_pod, self.core_v1.patch_namespaced_pod, ResourceFactory.pod),
-            "pod": (f"{name}-stateful", self.apps_v1.read_namespaced_stateful_set, self.apps_v1.patch_namespaced_stateful_set, ResourceFactory.statefulset),
+            "stateful": (f"{name}-stateful", self.apps_v1.read_namespaced_stateful_set, self.apps_v1.patch_namespaced_stateful_set, ResourceFactory.statefulset),
             "job": (f"{name}-job", self.batch_v1.read_namespaced_job, self.batch_v1.patch_namespaced_job, ResourceFactory.job),
             "cron-job": (f"{name}-cron-job", self.batch_v1.read_namespaced_cron_job, self.batch_v1.patch_namespaced_cron_job, ResourceFactory.pvc),
         }

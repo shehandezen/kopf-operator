@@ -1,0 +1,59 @@
+spec:
+  replicas: 1
+  container:
+    name: "{{name}}"
+    image: registry:2
+    ports:
+      - containerPort: 5000
+    env:
+      - name: REGISTRY_HTTP_ADDR
+        value: ":5000"
+      - name: REGISTRY_HTTP_SECRET
+        valueFrom:
+            secretKeyRef:
+              name: "{{ name }}-secrets"
+              key: registry-http-secret
+      - name: REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY
+        value: /var/lib/registry
+      - name: REGISTRY_AUTH
+        value: htpasswd
+      - name: REGISTRY_AUTH_HTPASSWD_REALM
+        value: Registry Realm
+      - name: REGISTRY_AUTH_HTPASSWD_PATH
+        value: /auth/htpasswd
+    volumeMounts:
+      - name: "{{ name }}-storage"
+        mountPath: /var/lib/registry
+      - name: "{{ name }}-auth-volume"
+        mountPath: /auth
+    livenessProbe:
+      tcpSocket:
+          port: 5000
+      initialDelaySeconds: 60
+      periodSeconds: 10
+    readinessProbe:
+      tcpSocket:
+          port: 5000
+      initialDelaySeconds: 60
+      periodSeconds: 5
+  volumes:
+    - name: "{{ name }}-storage"
+      persistentVolumeClaim:
+        claimName: "{{ name }}-pvc"
+    - name: "{{ name }}-auth-volume"
+      secret:
+        secretName: "{{ name }}-auth"
+  pvc:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 10Gi
+    storageClassName: standard
+  service:
+    selector:
+      app: "{{ name }}"
+    ports:
+      - port: 5000
+        targetPort: 5000
+    type: ClusterIP

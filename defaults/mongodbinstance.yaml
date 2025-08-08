@@ -1,62 +1,74 @@
 spec:
-  replicas: 1
-  container:
-    name: "{{ name }}"
-    image: mongo:6.0
-    ports:
-      - containerPort: 27017
-    env:
-      - name: MONGO_INITDB_ROOT_USERNAME
-        valueFrom:
-          secretKeyRef:
-            name: "{{ name }}-secrets"
-            key: mongo-root-username
-      - name: MONGO_INITDB_ROOT_PASSWORD
-        valueFrom:
-          secretKeyRef:
-            name: "{{ name }}-secrets"
-            key: mongo-root-password
-    volumeMounts:
+  stateful:
+    replicas: 2
+    terminationGracePeriodSeconds: 30
+    container:
+      name: "{{ name }}"
+      image: mongo:6.0
+      command: ["mongod"]
+      args: ["--replSet", "rs0", "--bind_ip_all"]
+      ports:
+        - containerPort: 27017
+      env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: "{{ name }}-secrets"
+              key: mongo-root-username
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: "{{ name }}-secrets"
+              key: mongo-root-password
+      volumeMounts:
+        - name: "{{ name }}-data"
+          mountPath: /data/db
+      resources:
+        limits:
+          memory: "1Gi"
+          cpu: "500m"
+        requests:
+          memory: "512Mi"
+          cpu: "250m"
+      livenessProbe:
+        tcpSocket:
+          port: 27017
+        initialDelaySeconds: 30
+        periodSeconds: 5
+        timeoutSeconds: 5
+        failureThreshold: 5
+      readinessProbe:
+        tcpSocket:
+          port: 27017
+        initialDelaySeconds: 30
+        periodSeconds: 5
+        timeoutSeconds: 5
+        failureThreshold: 5
+    volumes:
       - name: "{{ name }}-data"
-        mountPath: /data/db
-    resources:
-      limits:
-        memory: "1Gi"
-        cpu: "500m"
-      requests:
-        memory: "512Mi"
-        cpu: "250m"
-    livenessProbe:
-      tcpSocket:
-        port: 27017
-      initialDelaySeconds: 30
-      periodSeconds: 5
-      timeoutSeconds: 5
-      failureThreshold: 5
-
-    readinessProbe:
-      tcpSocket:
-        port: 27017
-      initialDelaySeconds: 30
-      periodSeconds: 5
-      timeoutSeconds: 5
-      failureThreshold: 5
-  volumes:
-    - name: "{{ name }}-data"
-      persistentVolumeClaim:
-        claimName: "{{ name }}-pvc"
-  affinity:
-    podAntiAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          podAffinityTerm:
-            labelSelector:
-              matchExpressions:
-                - key: app
-                  operator: In
-                  values:
-                    - "{{ name }}"
-            topologyKey: kubernetes.io/hostname
+        emptyDir: {}
+    volumeClaimTemplates:
+      - metadata:
+          name: "{{ name }}"
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: "10Gi"
+          storageClassName: standard
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - "{{ name }}"
+              topologyKey: kubernetes.io/hostname
   service:
     type: ClusterIP
     selector:
@@ -64,10 +76,3 @@ spec:
     ports:
       - port: 27017
         targetPort: 27017
-  pvc:
-    accessModes:
-      - ReadWriteOnce
-    resources:
-      requests:
-        storage: 20Gi
-    storageClassName: standard
