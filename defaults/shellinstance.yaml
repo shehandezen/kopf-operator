@@ -1,0 +1,26 @@
+spec:
+  pod:
+    container:
+      name: "{{ name }}"
+      image: shehandezen/cneura-shell:latest
+      volumeMounts:
+        - name: "{{ name }}-data"
+          mountPath: /mnt/vol
+      resources:
+        limits:
+          memory: "1Gi"
+          cpu: "500m"
+        requests:
+          memory: "512Mi"
+          cpu: "250m"
+    volumes:
+      - name: "{{ name }}-data"
+        persistentVolumeClaim:
+          claimName: "{{ name }}-pvc"
+  pvc:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 5Gi
+    storageClassName: standard

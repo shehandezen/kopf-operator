@@ -1,0 +1,54 @@
+spec:
+  replicas: 1
+  container:
+    name: "{{ name }}"
+    image: shehandezen/cneura-llm:latest
+    ports:
+      - containerPort: 8585
+    env:
+      - name: DB_NAME
+        value: "llm"
+      - name: AUTH_URL
+        value: "http://authv1-svc.cneura-core.svc.cluster.local:8484/auth"
+      - name: REQUIRED_AUTH_GROUP
+        value: "CN_LLM_S"
+      - name: MONGO_URI
+        valueFrom:
+          secretKeyRef:
+            name: "{{ name }}-secrets"
+            key: mongo-url
+      - name: GEMINI_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: "{{ name }}-secrets"
+            key: gemini-api-key
+    resources:
+      limits:
+        memory: "512Gi"
+        cpu: "500m"
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+    readinessProbe:
+      tcpSocket:
+        port: 8585
+      failureThreshold: 6
+      initialDelaySeconds: 40
+      timeoutSeconds: 30
+      periodSeconds: 60
+    livenessProbe:
+      tcpSocket:
+        port: 8585
+      failureThreshold: 5
+      initialDelaySeconds: 60
+      timeoutSeconds: 30
+      periodSeconds: 20
+  service:
+    selector:
+      app: "{{ name }}"
+    ports:
+      - port: 8585
+        targetPort: 8585
+        protocol: TCP
+    type: ClusterIP
+  

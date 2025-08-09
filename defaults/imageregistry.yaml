@@ -4,15 +4,19 @@ spec:
     name: "{{name}}"
     image: registry:2
     ports:
-      - containerPort: 5000
+      - containerPort: 443                   
     env:
       - name: REGISTRY_HTTP_ADDR
-        value: ":5000"
+        value: "0.0.0.0:443"                          
+      - name: REGISTRY_HTTP_TLS_CERTIFICATE
+        value: /certs/tls.crt                  
+      - name: REGISTRY_HTTP_TLS_KEY
+        value: /certs/tls.key                   
       - name: REGISTRY_HTTP_SECRET
         valueFrom:
-            secretKeyRef:
-              name: "{{ name }}-secrets"
-              key: registry-http-secret
+          secretKeyRef:
+            name: "{{ name }}-secrets"
+            key: registry-http-secret
       - name: REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY
         value: /var/lib/registry
       - name: REGISTRY_AUTH
@@ -26,14 +30,17 @@ spec:
         mountPath: /var/lib/registry
       - name: "{{ name }}-auth-volume"
         mountPath: /auth
+      - name: "{{ name }}-tls"
+        mountPath: /certs                        
+        readOnly: true
     livenessProbe:
       tcpSocket:
-          port: 5000
+        port: 443
       initialDelaySeconds: 60
       periodSeconds: 10
     readinessProbe:
       tcpSocket:
-          port: 5000
+        port: 443
       initialDelaySeconds: 60
       periodSeconds: 5
   volumes:
@@ -43,6 +50,9 @@ spec:
     - name: "{{ name }}-auth-volume"
       secret:
         secretName: "{{ name }}-auth"
+    - name: "{{ name }}-tls"
+      secret:
+        secretName: "{{ name }}-tls-secret"       
   pvc:
     accessModes:
       - ReadWriteOnce
@@ -54,6 +64,5 @@ spec:
     selector:
       app: "{{ name }}"
     ports:
-      - port: 5000
-        targetPort: 5000
-    type: ClusterIP
+      - port: 5443
+        targetPort: 443                     

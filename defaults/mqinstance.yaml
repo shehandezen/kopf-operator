@@ -73,7 +73,7 @@ spec:
   service:
     selector:
       app: "{{ name }}"
-    type: ClusterIP
+    type: NodePort
     ports:
       - name: amqp
         port: 5672

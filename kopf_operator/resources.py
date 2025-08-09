@@ -274,7 +274,7 @@ class ResourceFactory:
             spec=V1ServiceSpec(
                 selector=svc_spec.get("selector", ResourceFactory.labels(name)),
                 ports=ports,
-                type="ClusterIP",
+                type=svc_spec.get("type", "ClusterIP"),
                 cluster_ip="None" if headless else None  
             )
         )
