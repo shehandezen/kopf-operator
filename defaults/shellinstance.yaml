@@ -3,6 +3,7 @@ spec:
     container:
       name: "{{ name }}"
       image: shehandezen/cneura-shell:latest
+      command: ["/init.sh"]
       volumeMounts:
         - name: "{{ name }}-data"
           mountPath: /mnt/vol

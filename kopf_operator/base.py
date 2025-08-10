@@ -74,15 +74,16 @@ class BaseKopfOperator:
             self.apply_resource(self.apps_v1.create_namespaced_stateful_set, ns, ResourceFactory.statefulset(name, ns, spec["stateful"]))
             self.apply_resource(self.core_v1.create_namespaced_service, ns, ResourceFactory.service(name, ns, spec, True))
             self.apply_resource(self.core_v1.create_namespaced_service, ns, ResourceFactory.service(name, ns, spec))
+        elif "pod" in spec:
+            if "pvc" in spec:
+                self.apply_resource(self.core_v1.create_namespaced_persistent_volume_claim, ns, ResourceFactory.pvc(name, ns, spec["pvc"]))
+            self.apply_resource(self.core_v1.create_namespaced_pod, ns, ResourceFactory.pod(name, ns, spec["pod"]))
         else: 
             if "pvc" in spec:
                 self.apply_resource(self.core_v1.create_namespaced_persistent_volume_claim, ns, ResourceFactory.pvc(name, ns, spec["pvc"]))
 
             self.apply_resource(self.apps_v1.create_namespaced_deployment, ns, ResourceFactory.deployment(name, ns, spec))
             self.apply_resource(self.core_v1.create_namespaced_service, ns, ResourceFactory.service(name, ns, spec))
-
-        if "pod" in spec:
-            self.apply_resource(self.core_v1.create_namespaced_pod, ns, ResourceFactory.pod(name, ns, spec["pod"]))
 
         if "job" in spec:
             self.apply_resource(self.batch_v1.create_namespaced_job,ns,ResourceFactory.job(name, ns, spec["job"]))
